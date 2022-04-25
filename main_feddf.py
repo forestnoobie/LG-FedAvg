@@ -31,16 +31,17 @@ if __name__ == '__main__':
     np.random.seed(args.seed)
     random.seed(args.seed)
 
-    base_dir = './save/{}/{}_iid{}_num{}_C{}_le{}_shard{}_{}/'.format(
-        args.dataset, args.model, args.iid, args.num_users, args.frac, args.local_ep, args.shard_per_user, args.results_save)
-    if not os.path.exists(os.path.join(base_dir, 'feddf')):
-        os.makedirs(os.path.join(base_dir, 'feddf'), exist_ok=True)
+    base_dir = './save/{}/{}_iid{}_num{}_C{}_le{}_shard{}_val{}_{}/'.format(
+        args.dataset, args.model, args.iid, args.num_users, args.frac, args.local_ep, args.shard_per_user, args.valid_ratio, args.results_save)
+    fed_name = 'feddf'
+    if not os.path.exists(os.path.join(base_dir, fed_name)):
+        os.makedirs(os.path.join(base_dir, fed_name), exist_ok=True)
 
     dataset_train, dataset_test, dict_users_train, dict_users_test, dataset_val = get_data(args) # For val data
     dataset_unlabeled_train, _ = get_unlabeled_data(args)
     
     dict_save_path = os.path.join(base_dir, 'dict_users.pkl')
-    log_save_path = os.path.join(base_dir, 'feddf/log.log')
+    log_save_path = os.path.join(base_dir, '{}/log.log'.format(fed_name))
     set_logger(log_save_path)
     with open(dict_save_path, 'wb') as handle:
         pickle.dump((dict_users_train, dict_users_test), handle)
@@ -126,8 +127,8 @@ if __name__ == '__main__':
             final_results.to_csv(results_save_path, index=False)
 
         if (iter + 1) % 50 == 0:
-            best_save_path = os.path.join(base_dir, 'fed/best_{}.pt'.format(iter + 1))
-            model_save_path = os.path.join(base_dir, 'fed/model_{}.pt'.format(iter + 1))
+            best_save_path = os.path.join(base_dir, '{}/best_{}.pt'.format(fed_name, iter + 1))
+            model_save_path = os.path.join(base_dir, '{}/model_{}.pt'.format(fed_name, iter + 1))
             torch.save(net_best.state_dict(), best_save_path)
             torch.save(net_glob.state_dict(), model_save_path)
 
