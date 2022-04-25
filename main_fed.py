@@ -3,13 +3,16 @@
 # Python version: 3.6
 
 import copy
+import random
 import pickle
+import logging
 import numpy as np
 import pandas as pd
 import torch
+import numpy as np
 
 from utils.options import args_parser
-from utils.train_utils import get_data, get_model
+from utils.train_utils import get_data, get_model, set_logger
 from models.Update import LocalUpdate
 from models.test import test_img
 import os
@@ -20,21 +23,31 @@ if __name__ == '__main__':
     # parse args
     args = args_parser()
     args.device = torch.device('cuda:{}'.format(args.gpu) if torch.cuda.is_available() and args.gpu != -1 else 'cpu')
+    
+    # Seed
+    torch.manual_seed(args.seed)
+    torch.cuda.manual_seed(args.seed)
+    torch.backends.cudnn.deterministic = True
+    np.random.seed(args.seed)
+    random.seed(args.seed)
 
     base_dir = './save/{}/{}_iid{}_num{}_C{}_le{}/shard{}/{}/'.format(
         args.dataset, args.model, args.iid, args.num_users, args.frac, args.local_ep, args.shard_per_user, args.results_save)
     if not os.path.exists(os.path.join(base_dir, 'fed')):
         os.makedirs(os.path.join(base_dir, 'fed'), exist_ok=True)
 
-    dataset_train, dataset_test, dict_users_train, dict_users_test = get_data(args)
+    dataset_train, dataset_test, dict_users_train, dict_users_test, _ = get_data(args) # For val data
     dict_save_path = os.path.join(base_dir, 'dict_users.pkl')
+    log_save_path = os.path.join(base_dir, 'fed/log.log')
+    set_logger(log_save_path)
     with open(dict_save_path, 'wb') as handle:
         pickle.dump((dict_users_train, dict_users_test), handle)
-
+    
+    logging.info(args)
+    
     # build model
     net_glob = get_model(args)
     net_glob.train()
-
     # training
     results_save_path = os.path.join(base_dir, 'fed/results.csv')
 
@@ -52,20 +65,20 @@ if __name__ == '__main__':
         loss_locals = []
         m = max(int(args.frac * args.num_users), 1)
         idxs_users = np.random.choice(range(args.num_users), m, replace=False)
-        print("Round {}, lr: {:.6f}, {}".format(iter, lr, idxs_users))
+        logging.info("Round {}, lr: {:.6f}, {}".format(iter, lr, idxs_users))
 
         for idx in idxs_users:
             local = LocalUpdate(args=args, dataset=dataset_train, idxs=dict_users_train[idx])
-            net_local = copy.deepcopy(net_glob)
+            net_local = copy.deepcopy(net_glob) ## Broadcast
 
             w_local, loss = local.train(net=net_local.to(args.device))
-            loss_locals.append(copy.deepcopy(loss))
+            loss_locals.append(copy.deepcopy(loss)) 
 
             if w_glob is None:
                 w_glob = copy.deepcopy(w_local)
             else:
                 for k in w_glob.keys():
-                    w_glob[k] += w_local[k]
+                    w_glob[k] += w_local[k] 
 
         lr *= args.lr_decay
 
@@ -74,7 +87,7 @@ if __name__ == '__main__':
             w_glob[k] = torch.div(w_glob[k], m)
 
         # copy weight to net_glob
-        net_glob.load_state_dict(w_glob)
+        net_glob.load_state_dict(w_glob) ## Aggregation
 
         # print loss
         loss_avg = sum(loss_locals) / len(loss_locals)
@@ -83,7 +96,7 @@ if __name__ == '__main__':
         if (iter + 1) % args.test_freq == 0:
             net_glob.eval()
             acc_test, loss_test = test_img(net_glob, dataset_test, args)
-            print('Round {:3d}, Average loss {:.3f}, Test loss {:.3f}, Test accuracy: {:.2f}'.format(
+            logging.info('Round {:3d}, Average loss {:.3f}, Test loss {:.3f}, Test accuracy: {:.2f}'.format(
                 iter, loss_avg, loss_test, acc_test))
 
 
@@ -107,4 +120,4 @@ if __name__ == '__main__':
             torch.save(net_best.state_dict(), best_save_path)
             torch.save(net_glob.state_dict(), model_save_path)
 
-    print('Best model, iter: {}, acc: {}'.format(best_epoch, best_acc))
+    logging.info('Best model, iter: {}, acc: {}'.format(best_epoch, best_acc))

@@ -4,8 +4,12 @@
 
 import torch
 from torch import nn
+import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
+from torch.optim.lr_scheduler import CosineAnnealingLR
 from tqdm import tqdm
+import logging
+import copy
 import math
 import pdb
 
@@ -21,7 +25,122 @@ class DatasetSplit(Dataset):
         image, label = self.dataset[self.idxs[item]]
         return image, label
 
+class GlobalUpdateEns(object):
+    def __init__(self, args, dataset=None, val_data=None, selected_clients=None, net=None):
+        self.args = args
+        self.loss_func = nn.KLDivLoss(reduction='batchmean')
+        self.selected_clients = selected_clients
+        self.ldr_train = DataLoader(dataset, batch_size=self.args.unlabeled_batch_size, shuffle=True)
+        self.ldr_val = DataLoader(val_data, batch_size=self.args.local_bs, shuffle=True)
+        self.model = copy.deepcopy(net)
+        self.load_client_model()
+        
+    def load_client_model(self):
+        model = copy.deepcopy(self.model)
+        client_models = []
+        with torch.no_grad():
+            for w_local in self.selected_clients:
+                model.cpu().load_state_dict(w_local)
+                model.eval()
+                client_models.append(copy.deepcopy(model))
+        
+        self.client_models = client_models
+    
+    def get_avg_logits(self, images):
+        data_num = images.size(0)
+        model = copy.deepcopy(self.model)
+        avg_logits = torch.zeros(data_num, self.args.num_classes, device=self.args.device)
+        
+        with torch.no_grad():
+            for client_model in self.client_models:
+                client_model.eval()
+                images = images.to(self.args.device)
+                client_model = client_model.to(self.args.device)
+                avg_logits += client_model(images)
+        avg_logits /= len(self.client_models)
+        avg_logits = F.softmax(avg_logits, dim=1)
+        return avg_logits.detach()
+    
+    def train(self, net, args):
+        # Ensemble update
+        net.train()
+        optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, self.model.parameters()), 
+                                     lr=args.server_lr, amsgrad=True)
+        scheduler = CosineAnnealingLR(optimizer, args.server_steps)
 
+        curr_step = 0
+        patience_step = 0
+        curr_val_acc = 0
+        best_val_acc = 0
+        epoch_loss = []
+        
+        while curr_step < args.server_steps and patience_step < args.server_patience_steps:
+            with tqdm(self.ldr_train, unit="Step") as tstep:
+                batch_loss = []
+                for batch_idx, (images, labels) in enumerate(tstep):
+                    tstep.set_description(f"Step {curr_step}")            
+                    if curr_step < args.server_steps and patience_step < args.server_patience_steps:
+                        net.train()
+                        images, labels = images.to(self.args.device), labels.to(self.args.device)
+                        net.zero_grad()
+                        output = net(images)
+                        log_probs = F.log_softmax(output, dim=1)
+                        avg_probs = self.get_avg_logits(images)
+
+                        loss = self.loss_func(log_probs, avg_probs)
+                        loss.backward()
+                        optimizer.step()
+                        scheduler.step()
+
+                        batch_loss.append(loss.item())
+                        curr_step += 1
+                        patience_step += 1
+
+                        ## Evaluate
+                        if self.ldr_val:
+                            if curr_step % 100 == 0 :
+                                curr_val_acc = self.validate(net, self.ldr_val, self.args.device, args)
+                                if curr_val_acc > best_val_acc:
+                                    best_val_acc = curr_val_acc
+                                    patience_step = 0
+
+                        tstep.set_postfix(val_acc=curr_val_acc, best_val_acc=best_val_acc, step_loss=loss.item())
+                    else :
+                        break
+
+
+                epoch_loss.append(sum(batch_loss)/len(batch_loss))
+       
+        logging.info("Best validation : {}".format(best_val_acc))
+        return net.state_dict(), sum(epoch_loss) / len(epoch_loss)
+    
+    
+    def validate(self, net, val_data, device, args):
+        net.eval()
+        correct = 0
+        n_data = 0
+
+        with torch.no_grad():
+            for batch_idx, (x, labels) in enumerate(val_data):
+                if type(x) == int or type(labels) == int : import ipdb; ipdb.set_trace(context=15)
+                x, labels = x.to(device), labels.to(device)
+                output = net(x)
+                predicted = torch.argmax(output, dim=1)
+
+                batch_correct = predicted.eq(labels).sum()
+                batch_num = x.size(0)
+
+                correct += batch_correct
+                n_data += batch_num
+
+            val_acc = correct / n_data
+        return val_acc.detach().item()
+        
+    
+
+        
+        
+        
 class LocalUpdate(object):
     def __init__(self, args, dataset=None, idxs=None, pretrain=False):
         self.args = args
@@ -45,10 +164,11 @@ class LocalUpdate(object):
             for batch_idx, (images, labels) in enumerate(self.ldr_train):
                 images, labels = images.to(self.args.device), labels.to(self.args.device)
                 net.zero_grad()
-                log_probs = net(images)
+                output = net(images)
 
-                loss = self.loss_func(log_probs, labels)
+                loss = self.loss_func(output, labels)
                 loss.backward()
+                torch.nn.utils.clip_grad_norm_(net.parameters(), 1.0)
                 optimizer.step()
 
                 batch_loss.append(loss.item())

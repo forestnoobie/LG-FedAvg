@@ -47,5 +47,28 @@ def args_parser():
     parser.add_argument('--results_save', type=str, default='/', help='define fed results save folder')
     parser.add_argument('--start_saving', type=int, default=0, help='when to start saving models')
 
+    # For Ensemble distillation
+
+    parser.add_argument('--unlabeled_data_dir', type=str, default='/home/osilab7/hdd/cifar', metavar='N',
+                        help='Unlabeled dataset used for ensemble')
+
+    parser.add_argument('--unlabeled_dataset', type=str, default='cifar100', metavar='N',
+                        help='Unlabeled dataset used for ensemble')
+
+    parser.add_argument('--unlabeled_batch_size', type=int, default=128, metavar='N',
+                        help='input batch size for training (default: 128)')
+
+    parser.add_argument('--server_steps', type=int, default=1e4, metavar='EP',
+                        help='how many steps will be trained in the server')
+
+    parser.add_argument('--server_patience_steps', type=int, default=1e3, metavar='EP',
+                        help='how many steps will be trained in the server without increase in val acc')
+
+    parser.add_argument('--server_lr', type=float, default=0.001, metavar='LR',
+                        help='learning rate on server (default: 0.001)')
+
+    parser.add_argument('--valid_ratio', type=float, default=0.0, metavar='LR',
+                        help='Ratio of validation set')
+    
     args = parser.parse_args()
     return args
