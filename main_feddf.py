@@ -69,6 +69,7 @@ if __name__ == '__main__':
         
         loss_locals = []
         m = max(int(args.frac * args.num_users), 1)
+        np.random.seed(iter)
         idxs_users = np.random.choice(range(args.num_users), m, replace=False)
         logging.info("Round {}, lr: {:.6f}, {}".format(iter, lr, idxs_users))
         for idx in idxs_users:
