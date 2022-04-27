@@ -209,7 +209,7 @@ def get_model(args):
 def get_custom_model(args, model_config):
     
     if m['model_type'] == 'cnn' and args.dataset == 'mnist':
-        net = CNNMnist_custom(args=args, model_config).to(args.device)
+        net = CNNMnist_custom(args=args, model_config=model_config).to(args.device)
     
     return net
 
