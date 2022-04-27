@@ -70,5 +70,18 @@ def args_parser():
     parser.add_argument('--valid_ratio', type=float, default=0.0, metavar='LR',
                         help='Ratio of validation set')
     
+    # For hetero_model
+    parser.add_argument('--hetero_model', help='Model heterogenity?', default=False,
+                        action='store_true')
+    
+    parser.add_argument('--model_group', type=int, default=0, metavar='N',
+                        help='Predefined Hetero models')
+    
+    parser.add_argument('--local_broadcast_ep', type=int, default=5, 
+                        help="the number of local epochs in broadcasting")
+    
+    parser.add_argument('--local_broadcast_lr', type=float, default=0.001, 
+                        help="broadcasting learning rate")
+    
     args = parser.parse_args()
     return args

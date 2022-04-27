@@ -8,6 +8,8 @@ import numpy as np
 from torch.utils.data import DataLoader, Dataset, Subset
 from torchvision import datasets, transforms
 from models.Nets import MLP, CNNMnist, CNNCifar
+from models.Custom_Nets import Custom_CNNMnist, Custom_CNNCifar
+
 from models.Resnets import ResNet18
 from models.Resnets_no_bn import resnet8_cifar
 from utils.sampling import iid, noniid
@@ -203,3 +205,22 @@ def get_model(args):
     print(net_glob)
 
     return net_glob
+
+def get_custom_model(args, model_config):
+    
+    if m['model_type'] == 'cnn' and args.dataset == 'mnist':
+        net = CNNMnist_custom(args=args, model_config).to(args.device)
+    
+    return net
+
+def get_model_hetero(args):
+    hetero_models = {}
+    if args.model_group == 0:
+        model_group = hetero_model_group0    
+    for idx, model_config in enumerate(model_group):
+        hetero_model[idx] = get_custom_model(args, model_config)
+    
+    return hetero_models
+
+# For 20 clients
+hetero_model_group0 = dict(zip(list(range(20)) ,[{"model_type" : 'cnn', "num_layers" : 2 + i}  for i in range(4)] * 5 ))

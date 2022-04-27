@@ -40,20 +40,21 @@ if __name__ == '__main__':
     dataset_train, dataset_test, dict_users_train, dict_users_test, dataset_val = get_data(args) # For val data
     dataset_unlabeled_train, _ = get_unlabeled_data(args)
     
-    dict_save_path = os.path.join(base_dir, 'dict_users.pkl')
+    dict_save_path = os.path.join(base_dir, '{}/dict_users.pkl'.format(fed_name))
     log_save_path = os.path.join(base_dir, '{}/log.log'.format(fed_name))
     set_logger(log_save_path)
     with open(dict_save_path, 'wb') as handle:
         pickle.dump((dict_users_train, dict_users_test), handle)
 
     logging.info(args)
-
+    logging.info(dict_users_train)
+    
     # build model
     net_glob = get_model(args)
     net_glob.train()
 
     # training
-    results_save_path = os.path.join(base_dir, 'feddf/results.csv')
+    results_save_path = os.path.join(base_dir, '{}/results.csv'.format(fed_name))
 
     loss_train = []
     net_best = None
@@ -75,9 +76,9 @@ if __name__ == '__main__':
         logging.info("Round {}, lr: {:.6f}, {}".format(iter, lr, idxs_users))
         for idx in idxs_users:
             local = LocalUpdate(args=args, dataset=dataset_train, idxs=dict_users_train[idx])
-            net_local = copy.deepcopy(net_glob) ## Broadcast
-
-            w_local, loss = local.train(net=net_local.to(args.device))
+            '''BroadCast'''
+            net_local = copy.deepcopy(net_glob) 
+            w_local, loss = local.train(net=net_local.to(args.device), lr=lr)
             loss_locals.append(copy.deepcopy(loss)) 
             selected_locals.append(copy.deepcopy(w_local))
 
@@ -108,15 +109,16 @@ if __name__ == '__main__':
         if (iter + 1) % args.test_freq == 0:
             net_glob.eval()
             acc_test, loss_test = test_img(net_glob, dataset_test, args)
-            logging.info('Round {:3d}, Average loss {:.3f}, Test loss {:.3f}, Test accuracy: {:.2f}'.format(
-                iter, loss_avg, loss_test, acc_test))
 
 
             if best_acc is None or acc_test > best_acc:
                 net_best = copy.deepcopy(net_glob)
                 best_acc = acc_test
                 best_epoch = iter
-
+                
+            logging.info('Round {:3d}, Average loss {:.3f}, Test loss {:.3f}, Test accuracy: {:.2f}, \
+                         Best Test accuracy: {:.2f}'.format(
+                iter, loss_avg, loss_test, acc_test, best_acc))
             # if (iter + 1) > args.start_saving:
             #     model_save_path = os.path.join(base_dir, 'fed/model_{}.pt'.format(iter + 1))
             #     torch.save(net_glob.state_dict(), model_save_path)
