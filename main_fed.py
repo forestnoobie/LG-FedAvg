@@ -45,7 +45,7 @@ if __name__ == '__main__':
         pickle.dump((dict_users_train, dict_users_test), handle)
         
     logging.info(args)
-    loggging.info(dict_users_train)
+    logging.info(dict_users_train)
     
     # build model
     net_glob = get_model(args)
